@@ -10,17 +10,14 @@ from theano.tensor import opt
 from theano.tensor.opt import ShapeFeature
 
 
-class Loop(gof.Op):
-    """This creates a loop from inputs and outputs lists of variables.
+class LoopBase(gof.Op):
+    """Base class for loop operations
 
-    :param inputs: list of inputs to loop over
-
-    :param outputs: list of output expressions
-
-    :param others: other variables that will be used to compute outputs.
-        Shared variables and constants must not be part of this list.
+    This class contains shared implementation and state for all Loop
+    operations (except Scan). You should never use it directly in a
+    graph.
     """
-    def __init__(self, inputs, outputs, others=None,
+    def __init__(self, inputs, outputs, others,
                  input_hints=None, output_hints=None):
         if others is None:
             others = []
@@ -32,7 +29,7 @@ class Loop(gof.Op):
         for i in inputs + outputs + others:
             if not isinstance(i, gof.Variable):
                 raise TypeError(
-                        'inputs and outputs must be Variable instances', i)
+                    'inputs, outputs and others must be Variables', i)
 
         if any(isinstance(i, SharedVariable) for i in inputs):
             raise ValueError("Inputs can't be shared variables "
@@ -46,14 +43,14 @@ class Loop(gof.Op):
                              "they will be handled automatically")
 
         self.inputs = inputs
-        self.others = others
         self.outputs = outputs
+        self.others = others
 
         # To correctly support shared variables the inner function
         # must not see them. Otherwise it becomes impossible to
         # compute the gradient.  So we collect them here to hide them
         # later.
-        self.shared = [var for var in gof.graph.inputs(outputs)
+        self.shared = [var for var in gof.graph.inputs(outputs, inputs+others)
                        if isinstance(var, SharedVariable)]
 
         if input_hints is None:
@@ -70,11 +67,20 @@ class Loop(gof.Op):
                     broadcastable=(False,) + out.type.broadcastable)()
                                  for out in outputs]
         else:
+            # We don't want to reuse the passed-in variable, just its type
             self.output_hints = [out.clone() for out in output_hints]
             assert len(self.output_hints) == len(self.outputs)
 
-    def make_func(self):
-        i = theano.shared(numpy.asarray(0, dtype='uint64'))
+    def __eq__(self, other):
+        #TODO: recognize a copy
+        return self is other
+
+    def __hash__(self):
+        #TODO: use internal variables in hash
+        return hash(type(self))
+
+    def make_func_g(self, init_i):
+        i = theano.shared(numpy.asarray(init_i, dtype='uint64'))
         shared_g = [var.type() for var in self.shared]
         inputs_g = [inp[i] for inp in self.input_hints]
         outputs_g = [theano.tensor.set_subtensor(out_h[i], out)
@@ -84,7 +90,8 @@ class Loop(gof.Op):
                                      inputs=(self.inputs + self.others +
                                              self.output_models +
                                              self.shared),
-                                     replace=dict(zip(self.shared + self.inputs,
+                                     replace=dict(zip(self.shared +
+                                                      self.inputs,
                                                       shared_g + inputs_g)),
                                      copy_inputs_over=False,
                                      rebuild_strict=True)
@@ -95,15 +102,7 @@ class Loop(gof.Op):
         assert len(new_outputs) == len(self.outputs)
         assert shared_inputs == [i]
 
-        f_inputs = new_inputs
-        f_outputs = new_outputs
-
-        fn = function(
-            f_inputs, f_outputs,
-            updates=[(i, i+numpy.asarray(1, dtype='int64'))],
-            mode=Mode(linker=VM_Linker(allow_gc=False, use_cloop=True)))
-
-        return fn, i, f_inputs, f_outputs
+        return i, new_inputs, new_outputs
 
     def make_shape_graph(self, input_shapes):
         # Here input_shapes doesn't contain the shapes of the output
@@ -138,13 +137,41 @@ class Loop(gof.Op):
         # XXX Maybe clone return nodes?
         return ret
 
-    def __eq__(self, other):
-        #TODO: recognize a copy
-        return self is other
+    def make_thunk(self, node, storage_map, compute_map, no_recycling):
+        # XXX: maybe do some hocus pocus to share storage_map
+        # Although this wouldn't be safe to share for more than one
+        # graph we would just have to return a unique thunk from here.
+        if not hasattr(self, "fn"):
+            self.fn self._i, _, _ = self.make_func()
 
-    def __hash__(self):
-        #TODO: use internal variables in hash
-        return hash(type(self))
+        ret = super(Loop, self).make_thunk(node, storage_map,
+                                           compute_map, no_recycling)
+        return ret
+
+    def infer_shape(self inputs, inputs_shapes):
+        os = input_shapes[len(self.inputs_hints) + len(self.others):]
+        return os[:len(self.output_hints)]
+
+    def perform(self, node, inputs, outputs):
+        self._i.set_value(0)
+        for c, v in zip(self.fn.inputs, inputs[1:]):
+            c.storage[0] = v
+        self.fn.fn(n_calls=inputs[0])
+        assert len(self.fn.outputs) == len(outputs)
+        for o, c in zip(outputs, self.fn.outputs):
+            o[0] = c.storage[0]
+
+
+class Loop(LoopBase):
+    """This creates a loop from inputs and outputs lists of variables.
+
+    :param inputs: list of inputs to loop over
+
+    :param outputs: list of output expressions
+
+    :param others: other variables that will be used to compute outputs.
+        Shared variables and constants must not be part of this list.
+    """
 
     def make_node(self, n_iters, *vars):
         # Check that the number of iterations is a scalar
@@ -185,29 +212,16 @@ class Loop(gof.Op):
                          [n_iters] + list(vars) + self.shared,
                          [o.clone() for o in self.output_hints])
 
-    def infer_shape(self inputs, inputs_shapes):
-        os = input_shapes[len(self.inputs_hints) + len(self.others):]
-        return os[:len(self.output_hints)]
+    def make_func(self):
+        i, f_inputs, f_outputs = self.make_func_g(0)
 
-    def make_thunk(self, node, storage_map, compute_map, no_recycling):
-        # XXX: maybe do some hocus pocus to share storage_map
-        # Although this wouldn't be safe to share for more than one
-        # graph we would just have to return a unique thunk from here.
-        if not hasattr(self, "fn"):
-            self.fn self._i, _, _ = self.make_func()
+        fn = function(
+            f_inputs, f_outputs,
+            updates=[(i, i+numpy.asarray(1, dtype='int64'))],
+            mode=Mode(linker=VM_Linker(allow_gc=False, use_cloop=True)))
 
-        ret = super(Loop, self).make_thunk(node, storage_map,
-                                           compute_map, no_recycling)
-        return ret
+        return fn, i, f_inputs, f_outputs
 
-    def perform(self, node, inputs, outputs):
-        self._i.set_value(0)
-        for c, v in zip(self.fn.inputs, inputs[1:]):
-            c.storage[0] = v
-        self.fn.fn(n_calls=inputs[0])
-        assert len(self.fn.outputs) == len(outputs)
-        for o, c in zip(outputs, self.fn.outputs):
-            o[0] = c.storage[0]
 
 
 def loop_fn(n_steps, fn, inputs, others=None, output_hints=None):
