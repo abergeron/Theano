@@ -222,6 +222,55 @@ class Loop(LoopBase):
 
         return fn, i, f_inputs, f_outputs
 
+    def grad(self, inputs, output_grads):
+        lopg = LoopGrad(self.inputs, self.outputs, self.others, self.shared,
+                        self.input_hints, self.output_hints)
+        # no grad for n_steps
+        return DisconnectedType()() + lopg(inputs[:1] + output_grads,
+                                           return_list=True)
+
+    # # TODO # #
+    # def connection_pattern(self, node):
+
+
+class LoopGrad(LoopBase):
+    def make_node(self, n_steps, *inputs):
+        # Check that the number of iterations is a scalar
+        assert n_iters.ndim == 0
+        assert n_iters.type.dtype == 'int64'
+
+        if len(inputs) != len(self.output_hints):
+            raise ValueError("Wrong number of inputs")
+        for oi, ii in zip(inputs, self.output_hints):
+            if not oi.type == ii.type:
+                raise TypeError("Wrong type for input, expected %s but got %s"
+                                % (ii.type, oi.type))
+
+        outputs = [o.clone() for o in self.input_hints +
+                   self.others + self.output_models]
+        # We don't want to clone shared variables since we don't want
+        # to have SharedVaraibles in the outputs.
+        outputs += [var.type() for var in self.shared]
+
+        return gof.Apply(self, [n_iters] + list(inputs), outputs)
+
+    def make_func(self):
+        i, f_inputs, f_outputs = self.make_func_g(-1)
+
+        g_inputs = [o.clone() for o in f_outputs]
+        g_outputs = theano.grad(None, wrt=f_inputs,
+                                known_grads=dict(zip(f_outputs, g_inputs)))
+
+        fn = function(
+            g_inputs, g_outputs,
+            updates=[(i, i-numpy.asarray(1, dtype='int64'))],
+            mode=Mode(linker=VM_Linker(allow_gc=False, use_cloop=True)))
+
+        return fn, i, f_inputs, f_outputs
+
+    # # TODO # #
+    # I think this is a regular loop over a double grad of the inner graph
+    # def grad(self, inputs, grads):
 
 
 def loop_fn(n_steps, fn, inputs, others=None, output_hints=None):
@@ -244,3 +293,4 @@ def loop_fn(n_steps, fn, inputs, others=None, output_hints=None):
 # Since Loop contains a Theano compiled function, we should let
 # DebugMode know about it
 gof.ops_with_inner_function[Loop] = 'fn'
+gof.ops_with_inner_function[LoopGrad] = 'fn'
