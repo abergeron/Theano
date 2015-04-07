@@ -10,6 +10,34 @@ from theano.tensor import opt
 from theano.tensor.opt import ShapeFeature
 
 
+class LoopItem(object):
+    """Represents one iteration buffer (input or output)
+
+    outer corresponds to the input/output value in the outer graph, may be None
+
+    inners is a dict of slices of the inputs/outputs in 'int -> var' form
+    """
+    def __init__(self, outer, inner):
+        self.outer = outer
+        self.inner = inner
+
+
+class LoopRecItem(object):
+    """
+    This holds the values to make a recurrence on a single sequence.
+
+    init_val is the initial value for recurrent inputs, an outer graph
+    variable
+
+    rec_map is the map of output vars to inputs vars that should be
+    recurrent in 'var -> var' form.  This map can contains outputs
+    that are duplicates of other outputs.
+    """
+    def __init__(self, init_val, rec_map):
+        self.init_val = init_val
+        self.rec_map = rec_map
+
+
 class LoopBase(gof.Op):
     """Base class for loop operations
 
@@ -17,7 +45,7 @@ class LoopBase(gof.Op):
     operations (except Scan). You should never use it directly in a
     graph.
     """
-    def __init__(self, inputs, outputs, others,
+    def __init__(self, inputs, outputs, others, rec_map,
                  input_hints=None, output_hints=None):
         if others is None:
             others = []
