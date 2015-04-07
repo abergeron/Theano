@@ -1,7 +1,7 @@
 import numpy
 
 import theano
-from theano import gof
+from theano import gof, tensor
 from theano.compile import SharedVariable, rebuild_collect_shared
 from theano.compile.ops import specify_shape
 from theano.compile.function_module import orig_function
@@ -142,13 +142,13 @@ class LoopBase(gof.Op):
         # Although this wouldn't be safe to share for more than one
         # graph we would just have to return a unique thunk from here.
         if not hasattr(self, "fn"):
-            self.fn self._i, _, _ = self.make_func()
+            self.fn, self._i, _, _ = self.make_func()
 
         ret = super(Loop, self).make_thunk(node, storage_map,
                                            compute_map, no_recycling)
         return ret
 
-    def infer_shape(self inputs, inputs_shapes):
+    def infer_shape(self, inputs, inputs_shapes):
         os = input_shapes[len(self.inputs_hints) + len(self.others):]
         return os[:len(self.output_hints)]
 
@@ -276,16 +276,18 @@ class LoopGrad(LoopBase):
 def loop_fn(n_steps, fn, inputs, others=None, output_hints=None):
     if others is None:
         others = []
+    else:
+        others = list(others)
     inner_inputs = [i[0] for i in inputs]
-    inner_outputs = fn(inner_inputs + others)
+    inner_outputs = fn(*(inner_inputs + others))
 
     lop = Loop(inner_inputs, inner_outputs, others, input_hints=inputs,
                output_hints=output_hints)
 
     if output_hints is None:
-        out_shp = lop.make_shape_graph([[i.shape(j) for j in range(i.ndim)]
+        out_shp = lop.make_shape_graph([[i.shape[j] for j in range(i.ndim)]
                                         for i in inner_inputs + others])
-        output_hints = [tensor.zeros(*((n_steps,) + shp)) for shp in out_shp]
+        output_hints = [tensor.zeros((n_steps,) + shp) for shp in out_shp]
         assert all(loi.type == oi.type for lio, io in zip(lop.output_hints,
                                                           output_hints))
     return lop(*((n_steps,) + inputs + others + output_hints))
