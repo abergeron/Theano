@@ -10,32 +10,31 @@ from theano.tensor import opt
 from theano.tensor.opt import ShapeFeature
 
 
+class PastValueOp(gof.Op):
+    __props__ = ('init_values', 'inplace')
+    def __init__(self, init_values, inplace=False):
+        assert isinstance(init_values, tuple)
+        self.init_values = init_values
+        self.inplace = inplace
+        if self.inplace:
+            self.destroy_map = {0: [0]}
+
+    def make_node(self, inp):
+        type = inp.type
+        self.values = [type.filter_value(v) for v in self.init_values]
+        node = Apply(self, [inp], [inp.type()])
+
+
 class LoopItem(object):
     """Represents one iteration buffer (input or output)
 
     outer corresponds to the input/output value in the outer graph, may be None
 
-    inners is a dict of slices of the inputs/outputs in 'int -> var' form
+    inner is the variable in the inner graph which matches
     """
     def __init__(self, outer, inner):
         self.outer = outer
         self.inner = inner
-
-
-class LoopRecItem(object):
-    """
-    This holds the values to make a recurrence on a single sequence.
-
-    init_val is the initial value for recurrent inputs, an outer graph
-    variable
-
-    rec_map is the map of output vars to inputs vars that should be
-    recurrent in 'var -> var' form.  This map can contains outputs
-    that are duplicates of other outputs.
-    """
-    def __init__(self, init_val, rec_map):
-        self.init_val = init_val
-        self.rec_map = rec_map
 
 
 class LoopBase(gof.Op):
@@ -45,7 +44,7 @@ class LoopBase(gof.Op):
     operations (except Scan). You should never use it directly in a
     graph.
     """
-    def __init__(self, inputs, outputs, others, rec_map,
+    def __init__(self, inputs, outputs, others,
                  input_hints=None, output_hints=None):
         if others is None:
             others = []
@@ -165,16 +164,12 @@ class LoopBase(gof.Op):
         # XXX Maybe clone return nodes?
         return ret
 
-    def make_thunk(self, node, storage_map, compute_map, no_recycling):
+    def prepare_node(self, node, storage_map, compute_map, no_recycling):
         # XXX: maybe do some hocus pocus to share storage_map
         # Although this wouldn't be safe to share for more than one
         # graph we would just have to return a unique thunk from here.
         if not hasattr(self, "fn"):
             self.fn, self._i, _, _ = self.make_func()
-
-        ret = super(Loop, self).make_thunk(node, storage_map,
-                                           compute_map, no_recycling)
-        return ret
 
     def infer_shape(self, inputs, inputs_shapes):
         os = input_shapes[len(self.inputs_hints) + len(self.others):]
