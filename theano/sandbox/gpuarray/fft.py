@@ -1,13 +1,10 @@
 from __future__ import absolute_import, print_function, division
-import string
 
 import numpy as np
-import theano
 import theano.tensor as T
+from theano import Op, Apply
 
-from theano.ifelse import ifelse
-
-from .basic_ops import gpu_contiguous, as_gpuarray_variable
+from .basic_ops import gpu_contiguous, as_gpuarray_variable, infer_context_name
 from .type import GpuArrayType
 
 try:
@@ -17,7 +14,7 @@ except ImportError:
 
 try:
     import skcuda
-    from skcuda import fft
+    from skcuda import fft as skfft
     skcuda.misc.init()
     skcuda_available = True
 except (ImportError, Exception):
@@ -28,9 +25,8 @@ class CuFFTOp(Op):
     __props__ = ()
 
     def __init__(self):
-        if not scikits_cuda_available:
-            raise RuntimeError("scikits-cuda is required for this Op, "
-                               "please install the skcuda package.")
+        if not skcuda_available:
+            raise RuntimeError("skcuda is required for this Op.")
 
     def make_node(self, inp):
         ctx_name = infer_context_name(inp)
@@ -76,10 +72,10 @@ class CuFFTOp(Op):
                 # only initialise plan if necessary
                 if plan[0] is None or plan_input_shape[0] != input_shape:
                     plan_input_shape[0] = input_shape
-                    plan[0] = fft.Plan(input_shape[1:], np.float32,
-                                       np.complex64, batch=input_shape[0])
-                    
-                fft.fft(inputs[0][0], outputs[0][0], plan[0])
+                    plan[0] = skfft.Plan(input_shape[1:], np.float32,
+                                         np.complex64, batch=input_shape[0])
+
+                skfft.fft(inputs[0][0], outputs[0][0], plan[0])
 
         thunk.inputs = inputs
         thunk.outputs = outputs
@@ -92,9 +88,8 @@ class CuIFFTOp(Op):
     __props__ = ()
 
     def __init__(self):
-        if not scikits_cuda_available:
-            raise RuntimeError("scikits-cuda is required for this Op, "
-                               "please install the skcuda package.")
+        if not skcuda_available:
+            raise RuntimeError("skcuda is required for this Op.")
 
     def make_node(self, inp):
         ctx_name = infer_context_name(inp)
@@ -109,7 +104,6 @@ class CuIFFTOp(Op):
         return Apply(self, [inp], [out])
 
     def make_thunk(self, node, storage_map, _, _2):
-        from theano.misc.pycuda_utils import to_gpuarray
         inputs = [storage_map[v] for v in node.inputs]
         outputs = [storage_map[v] for v in node.outputs]
 
@@ -139,10 +133,10 @@ class CuIFFTOp(Op):
                 # only initialise plan if necessary
                 if plan[0] is None or plan_input_shape[0] != input_shape:
                     plan_input_shape[0] = input_shape
-                    plan[0] = fft.Plan(output_shape[1:], np.complex64,
-                                       np.float32, batch=output_shape[0])
+                    plan[0] = skfft.Plan(output_shape[1:], np.complex64,
+                                         np.float32, batch=output_shape[0])
 
-                fft.ifft(x[0], z[0], plan[0])
+                skfft.ifft(x[0], z[0], plan[0])
                 # strangely enough, enabling rescaling here makes it run
                 # very, very slowly.  so do this rescaling manually
                 # afterwards!
@@ -170,7 +164,7 @@ def fft(val):
     return cufft(val)
 
 
-def ifft2D(val):
+def ifft(val):
     """
     Perform ifft on a batch of values.
 
