@@ -60,7 +60,7 @@ class CuFFTOp(Op):
             output_shape += [2]
             output_shape = tuple(output_shape)
 
-            z = outputs[0][0]
+            z = outputs[0]
 
             # only allocate if there is no previous allocation of the
             # right size.
@@ -177,6 +177,6 @@ def ifft(val):
     The output will have one less dimension.
     """
     out = cuifft(val)
-    return as_gpuarray_variable((1.0 / T.cast(out.shape[1] * out.shape[2],
+    return as_gpuarray_variable((1.0 / T.cast(T.mul(*out.shape[1:]),
                                               'float32')) * out,
                                 out.type.context_name)

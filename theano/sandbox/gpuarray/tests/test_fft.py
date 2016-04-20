@@ -8,22 +8,22 @@ from .config import mode_with_gpu, test_ctx_name
 from .test_basic_ops import rand_gpuarray
 
 from ..type import GpuArrayType
-from ..fft import fft, ifft
+from ..fft import fft, ifft, skcuda_available
 
-if not fft.skcuda_available:
+if not skcuda_available:
     raise SkipTest('Optional package skcuda not available')
 
 
 def test_fft_ifft():
     x = GpuArrayType(broadcastable=[False, False], dtype='float32',
-                     context_name=test_ctx_name)
+                     context_name=test_ctx_name)()
     cx = fft(x)
     x2 = ifft(cx)
 
     f = theano.function([x], [cx, x2], mode=mode_with_gpu)
 
     for sh in (7, 8):
-        x_val = rand_gpuarray((2, sh), dtype='float32')
+        x_val = rand_gpuarray(2, sh, dtype='float32')
 
         cx_val, x2_val = f(x_val)
 
