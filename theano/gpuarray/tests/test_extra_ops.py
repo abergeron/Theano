@@ -32,7 +32,8 @@ class TestGpuCumsum(theano.tensor.tests.test_extra_ops.TestCumsumOp):
 
     def test_infer_shape(self):
         x = T.tensor3('x')
-        a = np.random.random((3, 5, 2)).astype(theano.config.floatX)
+        # only float32 works
+        a = np.random.random((3, 5, 2)).astype('float32')
 
         for axis in range(-len(a.shape), len(a.shape)):
             self._compile_and_check([x],
