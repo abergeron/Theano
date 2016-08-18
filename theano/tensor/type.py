@@ -404,6 +404,10 @@ class TensorType(Type):
 
         return False
 
+    def value_set(self, dest, src):
+        src = self.filter(src)
+        dest[...] = src
+
     def __hash__(self):
         """Hash equal for same kinds of TensorType"""
         return hashtype(self) ^ hash(self.dtype) ^ hash(self.broadcastable)

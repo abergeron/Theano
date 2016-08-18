@@ -340,6 +340,10 @@ class GpuArrayType(Type):
                 an, bn, allow_remove_inf=allow_remove_inf,
                 allow_remove_nan=allow_remove_nan, rtol=rtol, atol=atol)
 
+    def value_set(self, dest, src):
+        src = self.filter(src)
+        dest[...] = src
+
     @staticmethod
     def may_share_memory(a, b):
         if (not isinstance(a, gpuarray.GpuArray) or
