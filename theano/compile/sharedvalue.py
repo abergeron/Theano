@@ -66,15 +66,16 @@ class SharedVariable(Variable):
     # or the "no_default_updates" list passed to "function" contains it.
 
     def __init__(self, name, type, value, strict,
-                 allow_downcast=None, container=None):
+                 allow_downcast=None, container=None, pinned=None):
         super(SharedVariable, self).__init__(type=type, name=name,
                                              owner=None, index=None)
 
         if container is not None:
             self.container = container
-            if (value is not None) or (strict is not None):
-                raise TypeError('value and strict are ignored if you pass '
-                                'a container here')
+            if ((value is not None) or (strict is not None) or
+                    (pinned is not None)):
+                raise TypeError('value, strict and pinned are ignored if you '
+                                'pass a container here')
         else:
             self.container = Container(
                 self,
@@ -82,7 +83,8 @@ class SharedVariable(Variable):
                                      allow_downcast=allow_downcast)],
                 readonly=False,
                 strict=strict,
-                allow_downcast=allow_downcast)
+                allow_downcast=allow_downcast,
+                pinned=pinned)
 
     def get_value(self, borrow=False, return_internal_type=False):
         """

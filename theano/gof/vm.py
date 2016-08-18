@@ -9,6 +9,7 @@ from __future__ import absolute_import, print_function, division
 
 from . import link
 from collections import defaultdict
+import ctypes
 import logging
 import os
 import sys
@@ -949,12 +950,26 @@ class VM_Linker(link.LocalLinker):
             # (output_vars contains first the returned outputs, then the
             # values of the update expressions).
             update_storage = []
+            update_fn_obj = []
+            update_fn = []
             update_in_from_out = {}
             for (ivar, ovar) in iteritems(updated_vars):
-                update_in_from_out[vars_idx[ovar]] = vars_idx[ivar]
+                update_in_from_out[vars_idx[ovar]] = (vars_idx[ivar],
+                                                      ivar.container)
+            update_fn_proto = ctypes.CFUNCTYPE(None, ctypes.py_object,
+                                               ctypes.py_object)
             for oidx in output_vars:
                 if oidx in update_in_from_out:
-                    update_storage.append(update_in_from_out[oidx])
+                    v, c = update_in_from_out[oidx]
+                    update_storage.append(v)
+                    if c.pinned:
+                        fn_obj = update_fn_proto(c.type.value_set)
+                        # to keep it alive
+                        update_fn_obj.append(fn_obj)
+                        # We pass the pointer to the function.
+                        update_fn.append(ctypes.cast(fn_obj, ctypes.c_void_p).value)
+                    else:
+                        update_fn.append(0)
 
             c0 = sys.getrefcount(node_n_inputs)
             vm = CVM(
@@ -977,9 +992,14 @@ class VM_Linker(link.LocalLinker):
                 node_prereqs=node_prereqs,
                 node_output_size=node_output_size,
                 update_storage=update_storage,
+                update_fn=update_fn,
                 dependencies=dependency_map_list,
             )
             assert c0 == sys.getrefcount(node_n_inputs)
+            if update_fn_obj:
+                # This makes sure to keep these objects alive as long
+                # as the CVM is alive.
+                vm._update_fn_objs = update_fn_obj
         else:
             lazy = self.lazy
             if lazy is None:

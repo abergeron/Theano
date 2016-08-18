@@ -436,7 +436,7 @@ class Container(object):
     """
 
     def __init__(self, r, storage, readonly=False, strict=False,
-                 allow_downcast=None, name=None):
+                 allow_downcast=None, name=None, pinned=False):
         if not isinstance(storage, list) or not len(storage) >= 1:
             raise TypeError("storage must be a list of length at least one")
         # self.r = r
@@ -452,6 +452,7 @@ class Container(object):
 
         self.storage = storage
         self.readonly = readonly
+        self.pinned = pinned
         self.strict = strict
         self.allow_downcast = allow_downcast
 
@@ -471,7 +472,9 @@ class Container(object):
                 kwargs['strict'] = True
             if self.allow_downcast is not None:
                 kwargs['allow_downcast'] = self.allow_downcast
-            if hasattr(self.type, 'filter_inplace'):
+            if self.pinned:
+                self.type.value_set(self.storage[0], value, **kwargs)
+            elif hasattr(self.type, 'filter_inplace'):
                 self.storage[0] = self.type.filter_inplace(value,
                                                            self.storage[0],
                                                            **kwargs)
@@ -499,6 +502,7 @@ class Container(object):
             deepcopy(self.strict, memo=memo),
             deepcopy(self.allow_downcast, memo=memo),
             deepcopy(self.name, memo=memo),
+            deepcopy(self.pinned, memo=memo),
         )
         # Work around NumPy deepcopy of ndarray with 0 dimention that
         # don't return an ndarray.

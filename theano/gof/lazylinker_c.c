@@ -67,6 +67,8 @@ static int unpack_list_of_ssize_t(PyObject * pylist, Py_ssize_t **dst, Py_ssize_
   return 0;
 }
 
+typedef void (*update_fn_t)(PyObject *, PyObject *);
+
 /**
 
   CLazyLinker
@@ -105,6 +107,7 @@ typedef struct {
     Py_ssize_t ** node_prereqs;
 
     Py_ssize_t * update_storage; // input cells to update with the last outputs in output_vars
+    update_fn_t * update_cptr_fn;
     Py_ssize_t n_updates;
 
     void ** thunk_cptr_fn;
@@ -127,6 +130,7 @@ CLazyLinker_dealloc(PyObject* _self)
   free(self->is_lazy);
 
   free(self->update_storage);
+  free(self->update_cptr_fn);
 
   if (self->node_n_prereqs)
     {
@@ -212,6 +216,7 @@ CLazyLinker_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
       self->node_n_prereqs = NULL;
 
       self->update_storage = NULL;
+      self->update_cptr_fn = NULL;
       self->n_updates = 0;
 
       self->thunk_cptr_data = NULL;
@@ -249,6 +254,7 @@ CLazyLinker_init(CLazyLinker *self, PyObject *args, PyObject *kwds)
       (char*)"node_prereqs",
       (char*)"node_output_size",
       (char*)"update_storage",
+      (char*)"update_fn",
       (char*)"dependencies",
       NULL};
 
@@ -265,10 +271,11 @@ CLazyLinker_init(CLazyLinker *self, PyObject *args, PyObject *kwds)
              *node_prereqs=NULL,
              *node_output_size=NULL,
              *update_storage=NULL,
+             *update_fn=NULL,
              *dependencies=NULL;
 
     assert(!self->nodes);
-    if (! PyArg_ParseTupleAndKeywords(args, kwds, "OOOiOOOOOOOOOOOOOOOO", kwlist,
+    if (! PyArg_ParseTupleAndKeywords(args, kwds, "OOOiOOOOOOOOOOOOOOOOO", kwlist,
                                       &self->nodes,
                                       &self->thunks,
                                       &self->pre_call_clear,
@@ -288,6 +295,7 @@ CLazyLinker_init(CLazyLinker *self, PyObject *args, PyObject *kwds)
                                       &node_prereqs,
                                       &node_output_size,
                                       &update_storage,
+                                      &update_fn,
                                       &dependencies
                                       ))
         return -1;
@@ -468,6 +476,14 @@ CLazyLinker_init(CLazyLinker *self, PyObject *args, PyObject *kwds)
     if (unpack_list_of_ssize_t(update_storage, &self->update_storage, &self->n_updates,
                                "updates_storage"))
       return -1;
+    Py_ssize_t fnsz;
+
+    if (unpack_list_of_ssize_t(update_fn, (Py_ssize_t **)&self->update_cptr_fn, &fnsz, "update_fn"))
+      return -1;
+    if (fnsz != self->n_updates) {
+      PyErr_SetString(PyExc_ValueError, "update_storage and update_fn have differing lengths");
+      return -1;
+    }
     return 0;
 }
 static void set_position_of_error(CLazyLinker * self, int owner_idx)
@@ -905,9 +921,17 @@ CLazyLinker_call(PyObject *_self, PyObject *args, PyObject *kwds)
           for (int i = 0; i < self->n_updates; ++i)
             {
               PyObject* tmp = PyList_GetItem(rval, self->n_output_vars - self->n_updates + i);
-              Py_INCREF(tmp);
               Py_ssize_t dst = self->update_storage[i];
-              PyList_SetItem(self->var_value_cells[dst], 0, tmp);
+              if (self->update_cptr_fn[i] != NULL)
+                {
+                  PyObject* pydst = PyList_GetItem(self->var_value_cells[dst], 0);
+                  self->update_cptr_fn[i](pydst, tmp);
+                }
+              else
+                {
+                  Py_INCREF(tmp);
+                  PyList_SetItem(self->var_value_cells[dst], 0, tmp);
+                }
             }
         }
     }
@@ -1054,7 +1078,7 @@ static PyTypeObject lazylinker_ext_CLazyLinkerType = {
 
 static PyObject * get_version(PyObject *dummy, PyObject *args)
 {
-  PyObject *result = PyFloat_FromDouble(0.211);
+  PyObject *result = PyFloat_FromDouble(0.212);
   return result;
 }
 
