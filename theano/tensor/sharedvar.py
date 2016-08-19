@@ -26,7 +26,8 @@ class TensorSharedVariable(_tensor_py_operators, SharedVariable):
 
 @shared_constructor
 def tensor_constructor(value, name=None, strict=False, allow_downcast=None,
-                       borrow=False, broadcastable=None, target='cpu'):
+                       borrow=False, broadcastable=None, target='cpu',
+                       pinned=False):
     """
     SharedVariable Constructor for TensorType.
 
@@ -54,7 +55,8 @@ def tensor_constructor(value, name=None, strict=False, allow_downcast=None,
                                 value=numpy.array(value, copy=(not borrow)),
                                 name=name,
                                 strict=strict,
-                                allow_downcast=allow_downcast)
+                                allow_downcast=allow_downcast,
+                                pinned=pinned)
 
 
 # TensorSharedVariable brings in the tensor operators, is not ideal, but works

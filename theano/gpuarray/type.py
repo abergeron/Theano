@@ -591,6 +591,7 @@ notset = object()
 def gpuarray_shared_constructor(value, name=None, strict=False,
                                 allow_downcast=None, borrow=False,
                                 broadcastable=None, target=notset):
+                                pinned=False):
     """
     SharedVariable constructor for GpuArrayType.
 
@@ -627,7 +628,7 @@ def gpuarray_shared_constructor(value, name=None, strict=False,
     deviceval = pygpu.gpuarray.array(value, copy=(not borrow),
                                      context=type.context)
     return GpuArraySharedVariable(type=type, value=deviceval, name=name,
-                                  strict=strict)
+                                  strict=strict, pinned=pinned)
 
 theano.compile.register_view_op_c_code(GpuArrayType, """
     Py_XDECREF(%(oname)s);
