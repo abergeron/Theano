@@ -144,6 +144,8 @@ if pygpu:
                                 GpuAdvancedIncSubtensor1)
 
     except Exception:
+        if config.force_device:
+            raise
         error("Could not initialize pygpu, support disabled", exc_info=True)
 else:
     if (config.init_gpu_device.startswith('cuda') or
@@ -151,4 +153,6 @@ else:
             config.device.startswith('opencl') or
             config.device.startswith('cuda') or
             config.contexts != ''):
+        if config.force_device:
+            raise EnvironmentError("You asked for gpuarray, but pygpu could not be imported")
         error("pygpu was configured but could not be imported", exc_info=True)
