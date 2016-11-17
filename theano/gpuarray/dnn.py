@@ -1983,6 +1983,7 @@ def _get_param_size(desc, input_size, dtype, context_name):
 
 
 class _RNNSplitParams(DnnBase):
+    _f16_ok = True
     __props__ = ('rnn_mode',)
 
     def __init__(self, rnn_mode):
@@ -2193,6 +2194,7 @@ def _split_rnn_params(w, desc, layer, input_size, dtype, rnn_mode):
 
 
 class GpuDnnRNNOp(DnnBase):
+    _f16_ok = True
     __props__ = ()
     _cop_num_inputs = 5
     _cop_num_outputs = 4
@@ -2284,6 +2286,7 @@ class GpuDnnRNNOp(DnnBase):
 
 
 class GpuDnnRNNGradInputs(DnnBase):
+    _f16_ok = True
     __props__ = ('rnn_mode', 'grad_c', 'grad_h')
     _cop_num_inputs = 10
     _cop_num_outputs = 4
@@ -2335,6 +2338,7 @@ class GpuDnnRNNGradInputs(DnnBase):
 
 
 class GpuDnnRNNGradWeights(DnnBase):
+    _f16_ok = True
     __props__ = ()
 
     def __init__(self):
