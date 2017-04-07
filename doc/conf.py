@@ -24,8 +24,10 @@ import os
 import sys
 import theano
 
-theano_path = os.path.join(os.path.dirname(__file__), os.pardir)
-sys.path.append(os.path.abspath(theano_path))
+theano_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+sys.path.append(theano_path)
+doc_path = os.path.join(theano_path, 'doc')
+sys.path.append(doc_path)
 
 # General configuration
 # ---------------------
@@ -36,7 +38,8 @@ extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.todo',
               'sphinx.ext.doctest',
               'sphinx.ext.napoleon',
-              'sphinx.ext.linkcode']
+              'sphinx.ext.linkcode',
+              'thconf']
 
 todo_include_todos = True
 napoleon_google_docstring = False

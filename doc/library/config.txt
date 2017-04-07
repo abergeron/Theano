@@ -1,10 +1,10 @@
 .. _libdoc_config:
 
-=======================================
-:mod:`config` -- Theano Configuration
-=======================================
+============================================
+:mod:`theano.config` -- Theano Configuration
+============================================
 
-.. module:: config
+.. module:: theano.config
    :platform: Unix, Windows
    :synopsis: Library configuration attributes.
 .. moduleauthor:: LISA
@@ -97,6 +97,8 @@ Config Attributes
 The list below describes some of the more common and important flags
 that you might want to use. For the complete list (including documentation),
 import theano and print the config variable, as in:
+
+.. thconf::
 
 .. code-block:: bash
 
