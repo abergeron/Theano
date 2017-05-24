@@ -837,7 +837,7 @@ class GpuAdvancedIncSubtensor1_dev20(GpuKernelBase, HideC,
         return super(GpuAdvancedIncSubtensor1_dev20, self).perform(node, inp, out)
 
     def c_code_cache_version(self):
-        return (9,)
+        return (10,)
 
     def c_headers(self):
         return ['<numpy_compat.h>', '<gpuarray_helper.h>',
@@ -896,65 +896,6 @@ if (GpuArray_vector_add_fast(%(out)s, %(y)s, %(ind)s, %(set_instead_of_inc)s)) {
         kname = "k_vector_add_fast"
         k_var = "k_vector_add_fast_" + nodename
         code = """
-/*
- * This is an atomicAdd that works for doubles since that is not provided
- * natively by cuda.
- */
-__device__ ga_double atomicAdd(ga_double* address, ga_double val) {
-    unsigned long long int* address_as_ull =
-                                          (unsigned long long int*)address;
-    unsigned long long int old = *address_as_ull, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_ull, assumed,
-                        __double_as_longlong(val +
-                        __longlong_as_double(assumed)));
-    } while (assumed != old);
-    return __longlong_as_double(old);
-}
-
-__device__ ga_double atomicExch(ga_double *address, ga_double val) {
-    return atomicExch((unsigned long long int *)address,
-                      __double_as_longlong(val));
-}
-
-/*
- * This is a version of atomicAdd that works for half-floats.  It may
- * read and write 2 bytes more than the size of the array if the array
- * has an uneven number of elements.  The actual value at that spot
- * will not be modified.
- */
-
-__device__ ga_half atomicAdd(ga_half *addr, ga_half val) {
-  ga_uint *base = (ga_uint *)((ga_size)addr & ~2);
-  ga_uint old, assumed, sum, new_;
-  old = *base;
-  do {
-    assumed = old;
-    sum = __float2half_rn(
-      __half2float(val) +
-      __half2float((ga_half)__byte_perm(old, 0,
-                     ((ga_size)addr & 2) ? 0x4432 : 0x4410)));
-    new_ = __byte_perm(old, sum, ((ga_size)addr & 2) ? 0x5410 : 0x3254);
-    old = atomicCAS(base, assumed, new_);
-  } while (assumed != old);
-  return (ga_half)__byte_perm(old, 0,
-                                  ((ga_size)addr & 2) ? 0x4432 : 0x4410);
-}
-
-__device__ ga_half atomicExch(ga_half *addr, ga_half val) {
-  ga_uint *base = (ga_uint *)((ga_size)addr & ~2);
-  ga_uint old, assumed, new_;
-  old = *base;
-  do {
-    assumed = old;
-    new_ = __byte_perm(old, val, ((ga_size)addr & 2) ? 0x5410 : 0x3254);
-    old = atomicCAS(base, assumed, new_);
-  } while (assumed != old);
-  return (ga_half)__byte_perm(old, 0,
-                                  ((ga_size)addr & 2) ? 0x4432 : 0x4410);
-}
-
         KERNEL void k_vector_add_fast(const ga_size numRowsX,
                                       const ga_size numColsX,
                                       const ga_ssize stridesX0,
